@@ -1,6 +1,22 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
 cc_binary(
     name = "hello-world",
     srcs = ["hello-world.cc"],
+)
+
+cc_library(
+    name = "datagram_transport",
+    hdrs = ["datagram_transport.h"],
+    srcs = ["datagram_transport.cc"],
+)
+
+cc_test(
+    name = "datagram_transport_test",
+    srcs = ["test/datagram_transport_test.cc"],
+    deps = [
+        ":datagram_transport",
+        "@gtest//:gtest_main",
+    ],
+    size = "small",  # ...for now.
 )
