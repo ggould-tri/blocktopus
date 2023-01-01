@@ -9,6 +9,7 @@ cc_library(
     name = "datagram_transport",
     hdrs = ["datagram_transport.h"],
     srcs = ["datagram_transport.cc"],
+    deps = ["@fmt"]
 )
 
 cc_test(
