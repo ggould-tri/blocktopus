@@ -104,13 +104,20 @@ void DatagramTransport::Start() {
   }
 }
 
-void DatagramTransport::Send(const DatagramTransport::UnsharedBuffer& data) {
-  // XXX
+void DatagramTransport::Send(
+    std::unique_ptr<DatagramTransport::UnsharedBuffer> data) {
+  outbound_buffers_.push_back(data);
 }
 
 std::vector<DatagramTransport::SharedBufferHandle>
 DatagramTransport::ReceiveAll() {
-  return {};  // XXX
+  std::vector<DatagramTransport::SharedBufferHandle> result;
+  for (auto& buffer : inbound_buffers_) {
+    if (!buffer.returned) {
+      result.push_back(MakeBufferHandle(&buffer));
+    }
+  }
+  return result;
 }
 
 void DatagramTransport::ProcessIO() {
@@ -119,7 +126,13 @@ void DatagramTransport::ProcessIO() {
 
 DatagramTransport::SharedBufferHandle
 DatagramTransport::MakeBufferHandle(DatagramTransport::SharedBuffer* buffer) {
-  return DatagramTransport::SharedBufferHandle();  // XXX
+  buffer->returned = true;
+
+  return DatagramTransport::SharedBufferHandle{
+    .lock(buffer->mutex.get()),
+    .size = buffer->size;
+    .data = &data;
+  };  // XXX
 }
 
 DatagramTransportServer::DatagramTransportServer(

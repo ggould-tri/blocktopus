@@ -29,7 +29,7 @@ namespace blocktopus {
 /// are sent, and A is received, then the only possible results of the next
 /// receive are B, error, or wait.  As such it is MUST be vulnerable to queue
 /// overflow on any finite machine.  Clients are responsible for regularly
-/// servicing the queue, ideally via a thread.
+/// servicing the queue, ideally via a thread regularly calling ProcessIO.
 class DatagramTransport {
  public:
   enum class End : int {
@@ -48,7 +48,7 @@ class DatagramTransport {
   };
 
   struct UnsharedBuffer {
-    size_t size;
+    size_t size;  // set to zero when empty.
     std::vector<uint8_t> data;
   };
 
@@ -56,11 +56,13 @@ class DatagramTransport {
     // NOTE:  Mutex is wrapped in order to get a move ctor (a mutex itself is
     // never movable and std::vector elements must be movable).
     std::unique_ptr<std::shared_mutex> mutex;
+    bool returned;
     size_t size;
     std::vector<uint8_t> data;
 
     SharedBuffer(size_t max_size)
-      : mutex(std::make_unique<std::shared_mutex>()),
+      : returned(false),
+        mutex(std::make_unique<std::shared_mutex>()),
         size(0),
         data(max_size, 0) {}
   };
@@ -86,8 +88,9 @@ class DatagramTransport {
 
   /// Send a datagram on this connnection.
   ///
-  /// The passed-in @p data will be copied.
-  void Send(const UnsharedBuffer& data);
+  /// Takes ownership of the passed-in data.
+  /// NOTE:  Actual sending is deferred until the next call to ProcessIO.
+  void Send(std::unique_ptr<UnsharedBuffer> data);
 
   /// Receive all queued datagrams on this connnection.
   ///
@@ -96,12 +99,12 @@ class DatagramTransport {
   /// caller should promptly process and discard these handles.
   std::vector<SharedBufferHandle> ReceiveAll();
 
-  /// The work unit function of this transport.
+  /// (BLOCKING) The work unit function of this transport.
   ///
   /// Attempts to send all pending outbound datagrams and receive any pending
   /// incoming datagrams from the network.
   ///
-  /// To use this transport as a nonblocking API, run this function in a
+  /// To use DatagramTransport as a nonblocking API, run this function in a
   /// loop on a thread; e.g.
   ///
   /// > std::thread([&](){ while(true) my_transport.ProcessIO(); });
@@ -117,7 +120,7 @@ class DatagramTransport {
 
   int sock_fd_;
   std::vector<SharedBuffer> inbound_buffers_;
-  std::vector<UnsharedBuffer> outbound_buffers_;
+  std::vector<std::unique_ptr<UnsharedBuffer> outbound_buffers_;
 };
 
 /// A server that listens for incoming connections on a port in order to
