@@ -104,6 +104,24 @@ void DatagramTransport::Start() {
   }
 }
 
+void DatagramTransport::Send(const DatagramTransport::UnsharedBuffer& data) {
+  // XXX
+}
+
+std::vector<DatagramTransport::SharedBufferHandle>
+DatagramTransport::ReceiveAll() {
+  return {};  // XXX
+}
+
+void DatagramTransport::ProcessIO() {
+  // XXX
+}
+
+DatagramTransport::SharedBufferHandle
+DatagramTransport::MakeBufferHandle(DatagramTransport::SharedBuffer* buffer) {
+  return DatagramTransport::SharedBufferHandle();  // XXX
+}
+
 DatagramTransportServer::DatagramTransportServer(
   const DatagramTransport::Config& transport_config_prototype)
     : transport_config_prototype_(transport_config_prototype) {
