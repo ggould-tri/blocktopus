@@ -8,9 +8,12 @@
 
 namespace {
 
-/// @brief Perform standard unix return value handling:  If the potential
-///        error value is negative, raise an exception with its strerror or
-///        with the value in erron.  Otherwise return the non-error value.
+/// @brief Perform standard unix return value handling.
+///
+/// If the potential error value is negative, raise an exception with its
+/// return code's `strerror` or that of the value in `errno`.
+///
+/// Otherwise @return the non-error value.
 int HandleError(const std::string& what, int maybe_error) {
   if (maybe_error >= 0) return maybe_error;
   if (maybe_error == -1) maybe_error = errno;
@@ -18,11 +21,11 @@ int HandleError(const std::string& what, int maybe_error) {
     fmt::format("ERROR[{}]: {}", what, strerror(maybe_error)));
 }
 
-/// @brief Return a bound, listening socket ready for accept() calls
+/// @brief Return a bound, listening socket ready for accept() calls.
 ///
-///        Creates and binds a new socket and puts it into listen mode
-///        using relevant values from @p config.  The returned value is
-///        a valid file descriptor (any failure causes an exception).
+/// Creates and binds a new socket and puts it into listen mode
+/// using relevant values from @p config.  The returned value is
+/// a valid file descriptor (any failure causes an exception).
 int BoundListeningSocket(
     const blocktopus::DatagramTransport::Config& config) {
   struct sockaddr_in server_addr;
@@ -124,9 +127,9 @@ void DatagramTransport::ProcessIO() {
 DatagramTransportServer::DatagramTransportServer(
   const DatagramTransport::Config& transport_config_prototype)
     : transport_config_prototype_(transport_config_prototype) {
-  // NOP:  We will lazily initialize in the first `AwaitIncomingConnection`
-  // to avoid doing blocking work in the ctor (even though in practice that
-  // setup rarely blocks).
+  // NOP:  We will lazily initialize via `BoundListeningSocket` in the first
+  // `AwaitIncomingConnection` to avoid doing blocking work in the ctor (even
+  // though in practice that setup rarely/never blocks).
 }
 
 DatagramTransport DatagramTransportServer::AwaitIncomingConnection() {

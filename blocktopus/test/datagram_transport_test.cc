@@ -4,12 +4,14 @@
 
 namespace blocktopus {
 
-// Demonstrate some basic assertions.
-TEST(DatagramTransport, LifecycleSmoke) {
-  {  // Create and destroy with default args.
-    DatagramTransport::Config config{};
-    DatagramTransport _transport(config);
-  }
+TEST(DatagramTransport, LifecycleClientSmoke) {
+  DatagramTransport::Config config{};
+  DatagramTransport _transport(config);
+}
+
+TEST(DatagramTransportServer, LifecycleServerSmoke) {
+  DatagramTransport::Config config{};
+  DatagramTransportServer _server(config);
 }
 
 }  // namespace blocktopus
