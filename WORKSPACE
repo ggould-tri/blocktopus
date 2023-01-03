@@ -9,7 +9,8 @@ git_repository(
 
 git_repository(
     name = "fmt",
-    branch = "master",
+    commit = "a33701196adfad74917046096bf5a2aa0ab0bb50",  # 9.1.0
+    shallow_since = "1661615830 -0700",
     remote = "https://github.com/fmtlib/fmt",
     patch_cmds = [
         "mv support/bazel/.bazelrc .bazelrc",
