@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <iostream>
 
 namespace {
 
@@ -18,9 +19,13 @@ int HandleError(const std::string& what, int maybe_error) {
   int error_to_print = maybe_error;
   if (maybe_error >= 0) return maybe_error;
   if (maybe_error == -1) error_to_print = errno;
-  throw std::logic_error(
+  std::string error_text =
     fmt::format("ERROR[{} => {}/{}]: {}",
-                what, maybe_error, error_to_print, strerror(error_to_print)));
+                what, maybe_error, error_to_print, strerror(error_to_print));
+  // This will often be called outside of the main thread, in which case
+  // the thrown text will not be output.  Write it directly before we throw.
+  std::cerr << error_text << std::endl;
+  throw std::logic_error(error_text);
 }
 
 /// @brief Return a bound, listening socket ready for accept() calls.
@@ -43,7 +48,7 @@ int BoundListeningSocket(
   server_addr.sin_addr.s_addr = INADDR_ANY;
   server_addr.sin_port = htons(config.remote_port);
 
-  HandleError("bind",
+  HandleError(fmt::format("bind({})", config.remote_port),
               bind(sock_fd,
                    reinterpret_cast<struct sockaddr*>(&server_addr),
                    sizeof(server_addr)));
@@ -62,6 +67,12 @@ DatagramTransport::DatagramTransport(
     : config_(config) {
   for (size_t i = 0; i < config_.max_inbound_queue_size; ++i) {
     inbound_buffers_.emplace_back(config_.mtu);
+  }
+}
+
+DatagramTransport::~DatagramTransport() {
+  if (sock_fd_ >= 0) {
+    close(sock_fd_);
   }
 }
 
@@ -92,9 +103,9 @@ void DatagramTransport::Start() {
         if (connect_error == 0) break;
       }
       HandleError("socket", sock_fd_);
-      HandleError("connect", connect_error);
+      HandleError(fmt::format("connect({})", config_.remote_port),
+                  connect_error);
       freeaddrinfo(addr_list);
-      close(sock_fd_);
       break;
     }
     case DatagramTransport::End::kServer: {
@@ -138,10 +149,20 @@ DatagramTransportServer::DatagramTransportServer(
   // though in practice that setup rarely/never blocks).
 }
 
-DatagramTransport DatagramTransportServer::AwaitIncomingConnection() {
+DatagramTransportServer::~DatagramTransportServer() {
+  if (sock_fd_ >= 0) {
+    close(sock_fd_);
+  }
+}
+
+void DatagramTransportServer::LazyInitialize() {
   if (sock_fd_ <= 0) {
     sock_fd_ = BoundListeningSocket(transport_config_prototype_);
   }
+}
+
+DatagramTransport DatagramTransportServer::AwaitIncomingConnection() {
+  LazyInitialize();
   struct sockaddr_in client_addr;
   unsigned int client_addr_len = sizeof(struct sockaddr_in);
   int new_fd = HandleError(
@@ -151,11 +172,22 @@ DatagramTransport DatagramTransportServer::AwaitIncomingConnection() {
            &client_addr_len));
   DatagramTransport::Config result_config = transport_config_prototype_;
   result_config.remote_addr = client_addr.sin_addr.s_addr;
-  result_config.remote_port = client_addr.sin_port;
+  result_config.remote_port = ntohs(client_addr.sin_port);
 
   DatagramTransport result(result_config);
   result.sock_fd_ = new_fd;
   return result;
+}
+
+uint16_t DatagramTransportServer::GetPortNumber() {
+  LazyInitialize();
+  struct sockaddr_in addr;
+  socklen_t socklen = sizeof(struct sockaddr_in);
+  HandleError("getsockname", getsockname(
+      sock_fd_,
+      reinterpret_cast<struct sockaddr*>(&addr),
+      &socklen));
+  return ntohs(addr.sin_port);
 }
 
 }  // namespace blocktopus

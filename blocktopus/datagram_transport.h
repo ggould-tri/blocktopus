@@ -30,7 +30,7 @@ namespace blocktopus {
 /// receive are B, error, or wait.  As such it is MUST be vulnerable to queue
 /// overflow on any finite machine.  Clients are responsible for regularly
 /// servicing the queue, ideally via a thread regularly calling ProcessIO.
-class DatagramTransport {
+class DatagramTransport final {
  public:
   /// @brief Which end of a connection this DatagramTransport contains.
   enum class End : int {
@@ -108,6 +108,10 @@ class DatagramTransport {
   /// (mtu * max_inbound_queue_size) all at once to avoid future allocations.
   DatagramTransport(const Config& config);
 
+  ~DatagramTransport();
+
+  DatagramTransport(DatagramTransport&&) = default;
+
   /// (BLOCKING) Start the network connection for this service.
   void Start();
 
@@ -141,14 +145,14 @@ class DatagramTransport {
 
   const Config config_;
 
-  int sock_fd_;
+  int sock_fd_ = -1;
   std::vector<SharedBuffer> inbound_buffers_;
   std::vector<std::unique_ptr<UnsharedBuffer>> outbound_buffers_;
 };
 
 /// A server that listens for incoming connections on a port in order to
 /// create DatagramTransport objects for each one.
-class DatagramTransportServer {
+class DatagramTransportServer final {
  public:
   /// @brief  Create a new server.
   /// @param transport_config A prototype Config copied for each created
@@ -156,7 +160,11 @@ class DatagramTransportServer {
   DatagramTransportServer(
     const DatagramTransport::Config& transport_config_prototype);
 
-  /// @brief  Get one incoming connection, build a transport for it.
+  ~DatagramTransportServer();
+
+  DatagramTransportServer(DatagramTransportServer&&) = default;
+
+  /// @brief  (BLOCKING) Get one incoming connection, build a transport for it.
   /// @return A server-end DatagramTransport for the new connection.
   ///
   /// To use DatagramTransportServer as a nonblocking API, run this function
@@ -165,7 +173,21 @@ class DatagramTransportServer {
   /// > std::thread([&](){ while(true) my_server.AwaitIncomingConnection(); });
   DatagramTransport AwaitIncomingConnection();
 
+  /// @brief  (BLOCKING) Retrieve the server port number.
+  ///
+  /// If the configured port number was 0 (allowing the OS to choose an
+  /// an unbound port, e.g. for unit testing; see `man 'bind(2)'` and
+  /// `man 'ip(7)'`), this is the only way to determine what port the server
+  /// is actually running on.
+  ///
+  /// Note that if `AwaitIncomingConnection` has not been called, this may
+  /// block to bind a port.
+  uint16_t GetPortNumber();
+
  private:
+  /// @brief  (BLOCKING) Post-ctor initialization.
+  void LazyInitialize();
+
   int sock_fd_ = -1;
   const DatagramTransport::Config transport_config_prototype_;
 };
