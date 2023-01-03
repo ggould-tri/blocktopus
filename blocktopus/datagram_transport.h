@@ -43,7 +43,6 @@ class DatagramTransport {
     uint16_t remote_port;
     size_t mtu;
     size_t max_inbound_queue_size;
-    size_t max_outbound_queue_size;
     size_t max_connection_queue_size;
   };
 
@@ -61,8 +60,8 @@ class DatagramTransport {
     std::vector<uint8_t> data;
 
     SharedBuffer(size_t max_size)
-      : returned(false),
-        mutex(std::make_unique<std::shared_mutex>()),
+      : mutex(std::make_unique<std::shared_mutex>()),
+        returned(false),
         size(0),
         data(max_size, 0) {}
   };
@@ -75,6 +74,13 @@ class DatagramTransport {
     std::shared_lock<std::shared_mutex> lock;
     size_t size;
     const std::vector<uint8_t>* data;
+
+    SharedBufferHandle(SharedBuffer* buffer) 
+        : lock(*buffer->mutex) {
+      buffer->returned = true;
+      size = buffer->size;
+      data = &buffer->data;
+    }
   };
 
   /// Construct the transport object but DO NOT start networking yet.
@@ -120,7 +126,7 @@ class DatagramTransport {
 
   int sock_fd_;
   std::vector<SharedBuffer> inbound_buffers_;
-  std::vector<std::unique_ptr<UnsharedBuffer> outbound_buffers_;
+  std::vector<std::unique_ptr<UnsharedBuffer>> outbound_buffers_;
 };
 
 /// A server that listens for incoming connections on a port in order to

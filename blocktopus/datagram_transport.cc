@@ -58,9 +58,6 @@ DatagramTransport::DatagramTransport(
   for (int i = 0; i < config_.max_inbound_queue_size; ++i) {
     inbound_buffers_.emplace_back(config_.mtu);
   }
-  for (int i = 0; i < config_.max_outbound_queue_size; ++i) {
-    outbound_buffers_.push_back({0, std::vector<uint8_t>(config_.mtu)});
-  }
 }
 
 void DatagramTransport::Start() {
@@ -114,7 +111,7 @@ DatagramTransport::ReceiveAll() {
   std::vector<DatagramTransport::SharedBufferHandle> result;
   for (auto& buffer : inbound_buffers_) {
     if (!buffer.returned) {
-      result.push_back(MakeBufferHandle(&buffer));
+      result.emplace_back(&buffer);
     }
   }
   return result;
@@ -122,17 +119,6 @@ DatagramTransport::ReceiveAll() {
 
 void DatagramTransport::ProcessIO() {
   // XXX
-}
-
-DatagramTransport::SharedBufferHandle
-DatagramTransport::MakeBufferHandle(DatagramTransport::SharedBuffer* buffer) {
-  buffer->returned = true;
-
-  return DatagramTransport::SharedBufferHandle{
-    .lock(buffer->mutex.get()),
-    .size = buffer->size;
-    .data = &data;
-  };  // XXX
 }
 
 DatagramTransportServer::DatagramTransportServer(
