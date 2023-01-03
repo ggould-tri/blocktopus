@@ -32,20 +32,28 @@ namespace blocktopus {
 /// servicing the queue, ideally via a thread regularly calling ProcessIO.
 class DatagramTransport {
  public:
+  /// @brief Which end of a connection this DatagramTransport contains.
   enum class End : int {
     SERVER = 1,
     CLIENT = 2,
   };
 
+  /// @brief Universal constructor arguments for a DatagramTransport.
+  ///
+  /// Note that the fields are filled in differently in the client and server
+  /// cases; a client must populate all members, while a server will discover
+  /// the remote-end parameters at connection time.
   struct Config {
     End end;
     std::string remote_addr;
     uint16_t remote_port;
+    // TODO(ggould) There is no check that both ends agree about this!
     size_t mtu;
     size_t max_inbound_queue_size;
     size_t max_connection_queue_size;
   };
 
+  /// @brief A container for the data and length of an outgoing datagram.
   struct UnsharedBuffer {
     size_t size;  // set to zero when empty.
     std::vector<uint8_t> data;
@@ -66,6 +74,12 @@ class DatagramTransport {
         data(max_size, 0) {}
   };
 
+  /// @brief A threadsafe reference to datagram contents.
+  ///
+  /// This is the structure that is returned to callers of this API for a
+  /// received datagram.  It pins the in-memory datagram in the queue while
+  /// it exists, so it should be processed and discarded promptly to prevent
+  /// unnecessary overflow and blocking.
   struct SharedBufferHandle {
     // NOTE:  We use a `shared_lock` and a bareptr rather than the more
     // obvious strategy of a `shared_ptr` because C++ shared pointer reference
@@ -91,10 +105,10 @@ class DatagramTransport {
   /// Construct the transport object but DO NOT start networking yet.
   ///
   /// Note that this allocates the full maximum buffer capacity
-  /// (mtu * sum(max_*_queue_size)) all at once to avoid future allocations.
+  /// (mtu * max_inbound_queue_size) all at once to avoid future allocations.
   DatagramTransport(const Config& config);
 
-  /// (Blocking) Start the network connection for this service.
+  /// (BLOCKING) Start the network connection for this service.
   void Start();
 
   /// Send a datagram on this connnection.
@@ -105,7 +119,7 @@ class DatagramTransport {
 
   /// Receive all queued datagrams on this connnection.
   ///
-  /// The returned handles each hold a lock on its respective buffer, which
+  /// Each returned handle holds a lock on its respective buffer, which
   /// will be unavailable to process futher incoming datagrams; as such, the
   /// caller should promptly process and discard these handles.
   std::vector<SharedBufferHandle> ReceiveAll();
@@ -124,8 +138,6 @@ class DatagramTransport {
  private:
   // Let factory class set private members.
   friend class DatagramTransportServer;
-
-  static SharedBufferHandle MakeBufferHandle(SharedBuffer* buffer);
 
   const Config config_;
 
@@ -146,6 +158,11 @@ class DatagramTransportServer {
 
   /// @brief  Get one incoming connection, build a transport for it.
   /// @return A server-end DatagramTransport for the new connection.
+  ///
+  /// To use DatagramTransportServer as a nonblocking API, run this function
+  /// in a loop on a thread; e.g.
+  ///
+  /// > std::thread([&](){ while(true) my_server.AwaitIncomingConnection(); });
   DatagramTransport AwaitIncomingConnection();
 
  private:
