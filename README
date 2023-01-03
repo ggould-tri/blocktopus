@@ -1,8 +1,0 @@
-Blocktopus
-==========
-
-An experimental repository for deterministic multiprocess datagram networking
-using the lock-time algorithm.
-
-This repository is expected to be moved or deleted; do not link to it in its
-current form.
