@@ -15,10 +15,12 @@ namespace {
 ///
 /// Otherwise @return the non-error value.
 int HandleError(const std::string& what, int maybe_error) {
+  int error_to_print = maybe_error;
   if (maybe_error >= 0) return maybe_error;
-  if (maybe_error == -1) maybe_error = errno;
+  if (maybe_error == -1) error_to_print = errno;
   throw std::logic_error(
-    fmt::format("ERROR[{}]: {}", what, strerror(maybe_error)));
+    fmt::format("ERROR[{} => {}/{}]: {}",
+                what, maybe_error, error_to_print, strerror(error_to_print)));
 }
 
 /// @brief Return a bound, listening socket ready for accept() calls.
@@ -65,7 +67,7 @@ DatagramTransport::DatagramTransport(
 
 void DatagramTransport::Start() {
   switch (config_.end) {
-    case DatagramTransport::End::CLIENT: {
+    case DatagramTransport::End::kClient: {
       struct addrinfo hints;
       struct addrinfo* addr_list;
       std::string port = fmt::format("{}", config_.remote_port);
@@ -95,7 +97,7 @@ void DatagramTransport::Start() {
       close(sock_fd_);
       break;
     }
-    case DatagramTransport::End::SERVER: {
+    case DatagramTransport::End::kServer: {
       break;
     }
     default:
@@ -127,6 +129,10 @@ void DatagramTransport::ProcessIO() {
 DatagramTransportServer::DatagramTransportServer(
   const DatagramTransport::Config& transport_config_prototype)
     : transport_config_prototype_(transport_config_prototype) {
+  if (transport_config_prototype_.end != DatagramTransport::End::kServer) {
+    throw std::logic_error(
+      "Tried to create a DatagramTransportServer with a client config");
+  }
   // NOP:  We will lazily initialize via `BoundListeningSocket` in the first
   // `AwaitIncomingConnection` to avoid doing blocking work in the ctor (even
   // though in practice that setup rarely/never blocks).
@@ -146,7 +152,6 @@ DatagramTransport DatagramTransportServer::AwaitIncomingConnection() {
   DatagramTransport::Config result_config = transport_config_prototype_;
   result_config.remote_addr = client_addr.sin_addr.s_addr;
   result_config.remote_port = client_addr.sin_port;
-  result_config.end = DatagramTransport::End::SERVER;
 
   DatagramTransport result(result_config);
   result.sock_fd_ = new_fd;

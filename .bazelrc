@@ -1,1 +1,5 @@
+# We use C++20 features (shared_lock).
 build --cxxopt=-std=c++20
+
+# Our tests do threading, IPC, and networking; don't get clever with output.
+test --test_output=streamed

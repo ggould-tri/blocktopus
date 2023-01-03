@@ -34,8 +34,8 @@ class DatagramTransport {
  public:
   /// @brief Which end of a connection this DatagramTransport contains.
   enum class End : int {
-    SERVER = 1,
-    CLIENT = 2,
+    kServer = 1,
+    kClient = 2,
   };
 
   /// @brief Universal constructor arguments for a DatagramTransport.
@@ -44,13 +44,13 @@ class DatagramTransport {
   /// cases; a client must populate all members, while a server will discover
   /// the remote-end parameters at connection time.
   struct Config {
-    End end;
-    std::string remote_addr;
-    uint16_t remote_port;
+    End end = End::kClient;
+    std::string remote_addr = "0.0.0.0";
+    uint16_t remote_port = 30303;
     // TODO(ggould) There is no check that both ends agree about this!
-    size_t mtu;
-    size_t max_inbound_queue_size;
-    size_t max_connection_queue_size;
+    size_t mtu = 1024;
+    size_t max_inbound_queue_size = 32;
+    size_t max_connection_queue_size = 5;
   };
 
   /// @brief A container for the data and length of an outgoing datagram.
@@ -166,9 +166,8 @@ class DatagramTransportServer {
   DatagramTransport AwaitIncomingConnection();
 
  private:
-  int sock_fd_;
+  int sock_fd_ = -1;
   const DatagramTransport::Config transport_config_prototype_;
-
 };
 
 }  // namespace blocktopus
