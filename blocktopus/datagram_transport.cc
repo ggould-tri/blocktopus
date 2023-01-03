@@ -53,9 +53,9 @@ int BoundListeningSocket(
 namespace blocktopus {
 
 DatagramTransport::DatagramTransport(
-  const DatagramTransport::Config& config) 
+  const DatagramTransport::Config& config)
     : config_(config) {
-  for (int i = 0; i < config_.max_inbound_queue_size; ++i) {
+  for (size_t i = 0; i < config_.max_inbound_queue_size; ++i) {
     inbound_buffers_.emplace_back(config_.mtu);
   }
 }
@@ -103,7 +103,7 @@ void DatagramTransport::Start() {
 
 void DatagramTransport::Send(
     std::unique_ptr<DatagramTransport::UnsharedBuffer> data) {
-  outbound_buffers_.push_back(data);
+  outbound_buffers_.push_back(std::move(data));
 }
 
 std::vector<DatagramTransport::SharedBufferHandle>

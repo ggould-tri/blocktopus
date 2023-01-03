@@ -75,12 +75,17 @@ class DatagramTransport {
     size_t size;
     const std::vector<uint8_t>* data;
 
-    SharedBufferHandle(SharedBuffer* buffer) 
+    SharedBufferHandle(SharedBuffer* buffer)
         : lock(*buffer->mutex) {
       buffer->returned = true;
       size = buffer->size;
       data = &buffer->data;
     }
+
+    SharedBufferHandle(const SharedBufferHandle& orig)
+        : lock(*orig.lock.mutex()),
+          size(orig.size),
+          data(orig.data) {}
   };
 
   /// Construct the transport object but DO NOT start networking yet.
