@@ -117,9 +117,8 @@ void DatagramTransport::Start() {
   }
 }
 
-void DatagramTransport::Send(
-    std::unique_ptr<DatagramTransport::UnsharedBuffer> data) {
-  outbound_buffers_.push_back(std::move(data));
+void DatagramTransport::Send(const DatagramTransport::UnsharedBuffer& data) {
+  
 }
 
 std::vector<DatagramTransport::SharedBufferHandle>
@@ -134,7 +133,7 @@ DatagramTransport::ReceiveAll() {
 }
 
 void DatagramTransport::ProcessIO() {
-  // XXX
+  // If we have anything to send, send it first.  We use nonblocking mode
 }
 
 DatagramTransportServer::DatagramTransportServer(

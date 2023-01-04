@@ -50,6 +50,7 @@ class DatagramTransport final {
     // TODO(ggould) There is no check that both ends agree about this!
     size_t mtu = 1024;
     size_t max_inbound_queue_size = 32;
+    size_t max_outbound_queue_size = 32;
     size_t max_connection_queue_size = 5;
   };
 
@@ -104,8 +105,9 @@ class DatagramTransport final {
 
   /// Construct the transport object but DO NOT start networking yet.
   ///
-  /// Note that this allocates the full maximum buffer capacity
-  /// (mtu * max_inbound_queue_size) all at once to avoid future allocations.
+  /// Note that this allocates the full maximum buffer capacity for inbound
+  /// message (mtu * max_inbound_queue_size) all at once to avoid future
+  /// allocations.
   DatagramTransport(const Config& config);
 
   ~DatagramTransport();
@@ -117,9 +119,9 @@ class DatagramTransport final {
 
   /// Send a datagram on this connnection.
   ///
-  /// Takes ownership of the passed-in data.
-  /// NOTE:  Actual sending is deferred until the next call to ProcessIO.
-  void Send(std::unique_ptr<UnsharedBuffer> data);
+  /// The passed-in data is copied; actual sending is deferred until the
+  /// next call to ProcessIO.
+  void Send(const UnsharedBuffer& data);
 
   /// Receive all queued datagrams on this connnection.
   ///
@@ -147,7 +149,7 @@ class DatagramTransport final {
 
   int sock_fd_ = -1;
   std::vector<SharedBuffer> inbound_buffers_;
-  std::vector<std::unique_ptr<UnsharedBuffer>> outbound_buffers_;
+  std::vector<UnsharedBuffer> outbound_buffers_;
 };
 
 /// A server that listens for incoming connections on a port in order to
