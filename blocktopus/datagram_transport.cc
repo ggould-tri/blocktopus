@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <iostream>
 
+namespace blocktopus {
+
 namespace {
 
 /// @brief Perform standard unix return value handling.
@@ -58,9 +60,25 @@ int BoundListeningSocket(
 
   return sock_fd;
 }
-}  // namespace
 
-namespace blocktopus {
+void AdvanceRxBuffer(struct DatagramTransport::RxBuffer* buffer, int fd) {
+  std::unique_lock lock(*buffer->mutex);
+  if (buffer->bytes_read < DatagramTransport::kDatagramSizeHeaderSize) {
+    int result = recv(
+         fd, &buffer->data.data()[buffer->bytes_read], 
+         DatagramTransport::kDatagramSizeHeaderSize - buffer->bytes_read,
+         0 /* no flags */);
+    if (result >= 0) { buffer->bytes_read += result; }
+    else {
+      if (result == EAGAIN || result == EWOULDBLOCK) {
+        ...;
+      } else {
+        HandleError("recv", result);
+      }
+    }
+  }
+}
+}  // namespace
 
 DatagramTransport::DatagramTransport(
   const DatagramTransport::Config& config)
@@ -117,13 +135,13 @@ void DatagramTransport::Start() {
   }
 }
 
-void DatagramTransport::Send(const DatagramTransport::UnsharedBuffer& data) {
+void DatagramTransport::Send(const DatagramTransport::TxBuffer& data) {
   
 }
 
-std::vector<DatagramTransport::SharedBufferHandle>
+std::vector<DatagramTransport::RxBufferHandle>
 DatagramTransport::ReceiveAll() {
-  std::vector<DatagramTransport::SharedBufferHandle> result;
+  std::vector<DatagramTransport::RxBufferHandle> result;
   for (auto& buffer : inbound_buffers_) {
     if (!buffer.returned) {
       result.emplace_back(&buffer);
@@ -133,7 +151,7 @@ DatagramTransport::ReceiveAll() {
 }
 
 void DatagramTransport::ProcessIO() {
-  // If we have anything to send, send it first.  We use nonblocking mode
+  
 }
 
 DatagramTransportServer::DatagramTransportServer(

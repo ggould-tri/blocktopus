@@ -1,6 +1,8 @@
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace blocktopus {
@@ -32,6 +34,9 @@ namespace blocktopus {
 /// servicing the queue, ideally via a thread regularly calling ProcessIO.
 class DatagramTransport final {
  public:
+  /// Size of a datagram size header, in bytes.
+  static constexpr size_t kDatagramSizeHeaderSize = sizeof(uint32_t);
+
   /// @brief Which end of a connection this DatagramTransport contains.
   enum class End : int {
     kServer = 1,
@@ -55,24 +60,23 @@ class DatagramTransport final {
   };
 
   /// @brief A container for the data and length of an outgoing datagram.
-  struct UnsharedBuffer {
+  struct TxBuffer {
     size_t size;  // set to zero when empty.
     std::vector<uint8_t> data;
   };
 
-  struct SharedBuffer {
+  struct RxBuffer {
     // NOTE:  Mutex is wrapped in order to get a move ctor (a mutex itself is
     // never movable and std::vector elements must be movable).
     std::unique_ptr<std::shared_mutex> mutex;
-    bool returned;
-    size_t size;
+    bool has_been_returned = false;
+    size_t bytes_read = 0;
+    size_t payload_size = -1;
     std::vector<uint8_t> data;
 
-    SharedBuffer(size_t max_size)
+    RxBuffer(size_t max_size)
       : mutex(std::make_unique<std::shared_mutex>()),
-        returned(false),
-        size(0),
-        data(max_size, 0) {}
+        data(max_size + kDatagramSizeHeaderSize, 0) {}
   };
 
   /// @brief A threadsafe reference to datagram contents.
@@ -81,23 +85,23 @@ class DatagramTransport final {
   /// received datagram.  It pins the in-memory datagram in the queue while
   /// it exists, so it should be processed and discarded promptly to prevent
   /// unnecessary overflow and blocking.
-  struct SharedBufferHandle {
+  struct RxBufferHandle {
     // NOTE:  We use a `shared_lock` and a bareptr rather than the more
     // obvious strategy of a `shared_ptr` because C++ shared pointer reference
     // counts other than zero are irretrievably thread unsafe (consider, e.g.,
     // `weak_ptr` promotion on another thread) and are being deprecated.
     std::shared_lock<std::shared_mutex> lock;
     size_t size;
-    const std::vector<uint8_t>* data;
+    const uint8_t* data;
 
-    SharedBufferHandle(SharedBuffer* buffer)
+    RxBufferHandle(RxBuffer* buffer)
         : lock(*buffer->mutex) {
-      buffer->returned = true;
-      size = buffer->size;
-      data = &buffer->data;
+      buffer->has_been_returned = true;
+      size = buffer->payload_size;
+      data = &buffer->data[kDatagramSizeHeaderSize];
     }
 
-    SharedBufferHandle(const SharedBufferHandle& orig)
+    RxBufferHandle(const RxBufferHandle& orig)
         : lock(*orig.lock.mutex()),
           size(orig.size),
           data(orig.data) {}
@@ -121,14 +125,14 @@ class DatagramTransport final {
   ///
   /// The passed-in data is copied; actual sending is deferred until the
   /// next call to ProcessIO.
-  void Send(const UnsharedBuffer& data);
+  void Send(const TxBuffer& data);
 
-  /// Receive all queued datagrams on this connnection.
+  /// Receive all queued inbound datagrams on this connnection.
   ///
   /// Each returned handle holds a lock on its respective buffer, which
   /// will be unavailable to process futher incoming datagrams; as such, the
   /// caller should promptly process and discard these handles.
-  std::vector<SharedBufferHandle> ReceiveAll();
+  std::vector<RxBufferHandle> ReceiveAll();
 
   /// (BLOCKING) The work unit function of this transport.
   ///
@@ -148,8 +152,15 @@ class DatagramTransport final {
   const Config config_;
 
   int sock_fd_ = -1;
-  std::vector<SharedBuffer> inbound_buffers_;
-  std::vector<UnsharedBuffer> outbound_buffers_;
+
+  std::optional<std::thread::id> io_thread_id_ = std::nullopt;
+
+  std::vector<RxBuffer> inbound_buffers_;
+  RxBuffer* current_receiving_buffer_ = nullptr;
+  int received_bytes_count_ = 0;
+
+  std::vector<TxBuffer> outbound_buffers_;
+  int sent_bytes_count_ = 0;
 };
 
 /// A server that listens for incoming connections on a port in order to
