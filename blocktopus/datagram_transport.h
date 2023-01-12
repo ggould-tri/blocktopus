@@ -61,8 +61,9 @@ class DatagramTransport final {
 
   /// @brief A container for the data and length of an outgoing datagram.
   struct TxBuffer {
-    size_t size;  // set to zero when empty.
+    size_t payload_size;  // set to zero when empty.
     std::vector<uint8_t> data;
+    size_t bytes_sent = 0;
   };
 
   struct RxBuffer {
@@ -70,9 +71,9 @@ class DatagramTransport final {
     // never movable and std::vector elements must be movable).
     std::unique_ptr<std::shared_mutex> mutex;
     bool has_been_returned = false;
-    size_t bytes_read = 0;
+    size_t bytes_read = 0;  // Including 4 bytes of length
     size_t payload_size = -1;
-    std::vector<uint8_t> data;
+    std::vector<uint8_t> data;  // Including 4 bytes of length
 
     RxBuffer(size_t max_size)
       : mutex(std::make_unique<std::shared_mutex>()),

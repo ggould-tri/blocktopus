@@ -3,9 +3,10 @@
 #include "fmt/core.h"
 
 #include <fcntl.h>
+#include <iostream>
+#include <mutex>
 #include <netdb.h>
 #include <unistd.h>
-#include <iostream>
 
 namespace blocktopus {
 
@@ -61,13 +62,13 @@ int BoundListeningSocket(
   return sock_fd;
 }
 
-// Blockingly attempt to complete reading one message.  Return `true` 
+// Blockingly attempt to complete reading one message.  Return `true`
 // if the fd remains open.
 bool AdvanceRxBuffer(struct DatagramTransport::RxBuffer* buffer, int fd) {
   std::unique_lock lock(*buffer->mutex);
   while (buffer->bytes_read < DatagramTransport::kDatagramSizeHeaderSize) {
     int read_result = recv(
-       fd, &buffer->data.data()[buffer->bytes_read], 
+       fd, &buffer->data.data()[buffer->bytes_read],
        DatagramTransport::kDatagramSizeHeaderSize - buffer->bytes_read,
        0 /* no flags */);
     if (read_result == EAGAIN) {
@@ -77,14 +78,14 @@ bool AdvanceRxBuffer(struct DatagramTransport::RxBuffer* buffer, int fd) {
     }
     buffer->bytes_read += HandleError("recv[header]", read_result);
   }
-  int payload_length =
+  size_t payload_length =
     ntohl(*reinterpret_cast<uint32_t*>(buffer->data.data()));
-  int message_length =
+  size_t message_length =
     payload_length + DatagramTransport::kDatagramSizeHeaderSize;
   // TODO(ggould) enforce MTU here
   while (buffer->bytes_read < message_length) {
     int read_result = recv(
-       fd, &buffer->data.data()[buffer->bytes_read], 
+       fd, &buffer->data.data()[buffer->bytes_read],
        message_length - buffer->bytes_read, 0 /* no flags */);
     if (read_result == EAGAIN) {
       continue;
@@ -92,6 +93,38 @@ bool AdvanceRxBuffer(struct DatagramTransport::RxBuffer* buffer, int fd) {
       return false;  // The remote end disconnected.
     }
     buffer->bytes_read += HandleError("recv[payload]", read_result);
+  }
+}
+
+// Blockingly send one message.  Return `true` if the fd remains open.
+bool AdvanceTxBuffer(struct DatagramTransport::TxBuffer* buffer, int fd) {
+  uint8_t size_data[4];
+  *reinterpret_cast<uint32_t*>(&size_data) = htonl(buffer->payload_size);
+  while (buffer->bytes_sent < DatagramTransport::kDatagramSizeHeaderSize) {
+    int send_result = send(
+       fd, &size_data[buffer->bytes_sent],
+       DatagramTransport::kDatagramSizeHeaderSize - buffer->bytes_sent,
+       0 /* no flags */);
+    if (send_result == EAGAIN) {
+      continue;
+    } else if (send_result == 0) {
+      return false;  // The remote end disconnected.
+    }
+    buffer->bytes_sent += HandleError("send[header]", send_result);
+  }
+  size_t message_length =
+    buffer->payload_size + DatagramTransport::kDatagramSizeHeaderSize;
+  // TODO(ggould) enforce MTU here
+  while (buffer->bytes_sent < message_length) {
+    int send_result = send(
+       fd, &buffer->data.data()[buffer->bytes_sent],
+       message_length - buffer->bytes_sent, 0 /* no flags */);
+    if (send_result == EAGAIN) {
+      continue;
+    } else if (send_result == 0) {
+      return false;  // The remote end disconnected.
+    }
+    buffer->bytes_sent += HandleError("send[payload]", send_result);
   }
 }
 }  // namespace
@@ -152,14 +185,14 @@ void DatagramTransport::Start() {
 }
 
 void DatagramTransport::Send(const DatagramTransport::TxBuffer& data) {
-  
+
 }
 
 std::vector<DatagramTransport::RxBufferHandle>
 DatagramTransport::ReceiveAll() {
   std::vector<DatagramTransport::RxBufferHandle> result;
   for (auto& buffer : inbound_buffers_) {
-    if (!buffer.returned) {
+    if (!buffer.has_been_returned) {
       result.emplace_back(&buffer);
     }
   }
@@ -167,7 +200,10 @@ DatagramTransport::ReceiveAll() {
 }
 
 void DatagramTransport::ProcessIO() {
-  
+  for (auto& buffer : inbound_buffers_) {
+    std::unique_lock lock;
+    lock.try_lock
+  }
 }
 
 DatagramTransportServer::DatagramTransportServer(
