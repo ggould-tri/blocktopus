@@ -61,21 +61,37 @@ int BoundListeningSocket(
   return sock_fd;
 }
 
-void AdvanceRxBuffer(struct DatagramTransport::RxBuffer* buffer, int fd) {
+// Blockingly attempt to complete reading one message.  Return `true` 
+// if the fd remains open.
+bool AdvanceRxBuffer(struct DatagramTransport::RxBuffer* buffer, int fd) {
   std::unique_lock lock(*buffer->mutex);
-  if (buffer->bytes_read < DatagramTransport::kDatagramSizeHeaderSize) {
-    int result = recv(
-         fd, &buffer->data.data()[buffer->bytes_read], 
-         DatagramTransport::kDatagramSizeHeaderSize - buffer->bytes_read,
-         0 /* no flags */);
-    if (result >= 0) { buffer->bytes_read += result; }
-    else {
-      if (result == EAGAIN || result == EWOULDBLOCK) {
-        ...;
-      } else {
-        HandleError("recv", result);
-      }
+  while (buffer->bytes_read < DatagramTransport::kDatagramSizeHeaderSize) {
+    int read_result = recv(
+       fd, &buffer->data.data()[buffer->bytes_read], 
+       DatagramTransport::kDatagramSizeHeaderSize - buffer->bytes_read,
+       0 /* no flags */);
+    if (read_result == EAGAIN) {
+      continue;
+    } else if (read_result == 0) {
+      return false;  // The remote end disconnected.
     }
+    buffer->bytes_read += HandleError("recv[header]", read_result);
+  }
+  int payload_length =
+    ntohl(*reinterpret_cast<uint32_t*>(buffer->data.data()));
+  int message_length =
+    payload_length + DatagramTransport::kDatagramSizeHeaderSize;
+  // TODO(ggould) enforce MTU here
+  while (buffer->bytes_read < message_length) {
+    int read_result = recv(
+       fd, &buffer->data.data()[buffer->bytes_read], 
+       message_length - buffer->bytes_read, 0 /* no flags */);
+    if (read_result == EAGAIN) {
+      continue;
+    } else if (read_result == 0) {
+      return false;  // The remote end disconnected.
+    }
+    buffer->bytes_read += HandleError("recv[payload]", read_result);
   }
 }
 }  // namespace
