@@ -1,4 +1,4 @@
-#include "blocktopus/datagram_transport.h"
+#include "blocktopus/transport.h"
 
 #include <thread>
 
@@ -6,26 +6,23 @@
 
 namespace blocktopus {
 
-TEST(DatagramTransport, LifecycleClientSmoke) {
-  DatagramTransport::Config config{};
-  DatagramTransport _transport(config);
+TEST(Transport, LifecycleClientSmoke) {
+  Transport::Config config{};
+  Transport _transport(config);
 }
 
-TEST(DatagramTransportServer, LifecycleServerSmoke) {
-  DatagramTransport::Config config{};
-  config.end = DatagramTransport::End::kServer;
-  DatagramTransportServer _server(config);
+TEST(TransportServer, LifecycleServerSmoke) {
+  TransportServer::Config config;
+  TransportServer _server(config);
 }
 
 // NOTE:  In the code below we set server ports per-test to avoid
 // having to do SO_REUSEADDR shenanigans.
 
 TEST(ClientServerPair, AcceptConnectionSmoke) {
-  DatagramTransportServer server(DatagramTransport::Config{
-    .end = DatagramTransport::End::kServer,
-    .remote_port = 0});
+  TransportServer server(TransportServer::Config{});
   auto server_port = server.GetPortNumber();
-  DatagramTransport client(DatagramTransport::Config{
+  Transport client(Transport::Config{
     .remote_addr = "localhost",
     .remote_port = server_port});
   int num_connections = 0;
@@ -40,9 +37,7 @@ TEST(ClientServerPair, AcceptConnectionSmoke) {
 
 TEST(ClientServerPair, AcceptMultiConnectionsSmoke) {
   int num_connections = 0;
-  DatagramTransportServer server(DatagramTransport::Config{
-    .end = DatagramTransport::End::kServer,
-    .remote_port = 0});
+  TransportServer server(TransportServer::Config{});
   auto server_port = server.GetPortNumber();
   std::thread server_thread([&]() {
     for (int i = 0; i < 3; ++i) {
@@ -51,7 +46,7 @@ TEST(ClientServerPair, AcceptMultiConnectionsSmoke) {
     };
   });
   for (int i = 0; i < 3; ++i) {
-    DatagramTransport(DatagramTransport::Config{
+    Transport(Transport::Config{
       .remote_addr = "localhost",
       .remote_port = server_port}).Start();
   }

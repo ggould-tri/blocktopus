@@ -1,6 +1,6 @@
+#include <deque>
 #include <memory>
 #include <optional>
-#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,13 +29,15 @@ namespace blocktopus {
 ///
 /// This service is strictly reliable and in-order, i.e. if messages A and B
 /// are sent, and A is received, then the only possible results of the next
-/// receive are B, error, or wait.  As such it is MUST be vulnerable to queue
-/// overflow on any finite machine.  Clients are responsible for regularly
-/// servicing the queue, ideally via a thread regularly calling ProcessIO.
-class DatagramTransport final {
+/// receive are B, error, or wait.
+///
+/// Clients are responsible for regularly servicing the queue, ideally via a
+/// thread regularly calling ProcessIO.
+
+class Transport final {
  public:
   /// Size of a datagram size header, in bytes.
-  static constexpr size_t kDatagramSizeHeaderSize = sizeof(uint32_t);
+  static constexpr size_t kHeaderSize = sizeof(uint32_t);
 
   /// @brief Which end of a connection this DatagramTransport contains.
   enum class End : int {
@@ -56,7 +58,6 @@ class DatagramTransport final {
     size_t mtu = 1024;
     size_t max_inbound_queue_size = 32;
     size_t max_outbound_queue_size = 32;
-    size_t max_connection_queue_size = 5;
   };
 
   /// @brief A container for the data and length of an outgoing datagram.
@@ -64,62 +65,24 @@ class DatagramTransport final {
     size_t payload_size;  // set to zero when empty.
     std::vector<uint8_t> data;
     size_t bytes_sent = 0;
+
+    bool done() { return bytes_sent == payload_size + kHeaderSize; }
   };
 
+  /// @brief A container for the data and length of an incoming datagram.
   struct RxBuffer {
-    // NOTE:  Mutex is wrapped in order to get a move ctor (a mutex itself is
-    // never movable and std::vector elements must be movable).
-    std::unique_ptr<std::shared_mutex> mutex;
-    bool has_been_returned = false;
-    size_t bytes_read = 0;  // Including 4 bytes of length
-    size_t payload_size = -1;
-    std::vector<uint8_t> data;  // Including 4 bytes of length
+    size_t payload_size;  // set to zero when empty.
+    std::vector<uint8_t> data;
+    size_t bytes_received = 0;
 
-    RxBuffer(size_t max_size)
-      : mutex(std::make_unique<std::shared_mutex>()),
-        data(max_size + kDatagramSizeHeaderSize, 0) {}
+    bool done() { return bytes_received == payload_size + kHeaderSize; }
   };
 
-  /// @brief A threadsafe reference to datagram contents.
-  ///
-  /// This is the structure that is returned to callers of this API for a
-  /// received datagram.  It pins the in-memory datagram in the queue while
-  /// it exists, so it should be processed and discarded promptly to prevent
-  /// unnecessary overflow and blocking.
-  struct RxBufferHandle {
-    // NOTE:  We use a `shared_lock` and a bareptr rather than the more
-    // obvious strategy of a `shared_ptr` because C++ shared pointer reference
-    // counts other than zero are irretrievably thread unsafe (consider, e.g.,
-    // `weak_ptr` promotion on another thread) and are being deprecated.
-    std::shared_lock<std::shared_mutex> lock;
-    size_t size;
-    const uint8_t* data;
+  Transport(const Config& config);
+  ~Transport();
+  Transport(Transport&&) = default;
 
-    RxBufferHandle(RxBuffer* buffer)
-        : lock(*buffer->mutex) {
-      buffer->has_been_returned = true;
-      size = buffer->payload_size;
-      data = &buffer->data[kDatagramSizeHeaderSize];
-    }
-
-    RxBufferHandle(const RxBufferHandle& orig)
-        : lock(*orig.lock.mutex()),
-          size(orig.size),
-          data(orig.data) {}
-  };
-
-  /// Construct the transport object but DO NOT start networking yet.
-  ///
-  /// Note that this allocates the full maximum buffer capacity for inbound
-  /// message (mtu * max_inbound_queue_size) all at once to avoid future
-  /// allocations.
-  DatagramTransport(const Config& config);
-
-  ~DatagramTransport();
-
-  DatagramTransport(DatagramTransport&&) = default;
-
-  /// (BLOCKING) Start the network connection for this service.
+    /// (BLOCKING) Start the network connection for this service.
   void Start();
 
   /// Send a datagram on this connnection.
@@ -133,9 +96,12 @@ class DatagramTransport final {
   /// Each returned handle holds a lock on its respective buffer, which
   /// will be unavailable to process futher incoming datagrams; as such, the
   /// caller should promptly process and discard these handles.
-  std::vector<RxBufferHandle> ReceiveAll();
+  std::vector<std::unique_ptr<RxBuffer>> ReceiveAll();
 
   /// (BLOCKING) The work unit function of this transport.
+  ///
+  /// @pre All calls to this function must be from the same thread
+  /// @return `true` if the transport remains usable (not closed)
   ///
   /// Attempts to send all pending outbound datagrams and receive any pending
   /// incoming datagrams from the network.
@@ -144,11 +110,14 @@ class DatagramTransport final {
   /// loop on a thread; e.g.
   ///
   /// > std::thread([&](){ while(true) my_transport.ProcessIO(); });
-  void ProcessIO();
+  bool ProcessIO();
+
+  /// @return the `Config` object this class was created with.
+  Config config() const { return config_; }
 
  private:
   // Let factory class set private members.
-  friend class DatagramTransportServer;
+  friend class TransportServer;
 
   const Config config_;
 
@@ -156,27 +125,31 @@ class DatagramTransport final {
 
   std::optional<std::thread::id> io_thread_id_ = std::nullopt;
 
-  std::vector<RxBuffer> inbound_buffers_;
-  RxBuffer* current_receiving_buffer_ = nullptr;
-  int received_bytes_count_ = 0;
+  std::vector<std::unique_ptr<RxBuffer>> inbound_buffers_;
+  std::unique_ptr<RxBuffer> current_incoming_message_ = nullptr;
 
-  std::vector<TxBuffer> outbound_buffers_;
-  int sent_bytes_count_ = 0;
+  std::deque<std::unique_ptr<TxBuffer>> outbound_buffers_;
+  std::unique_ptr<TxBuffer> current_outgoing_message_ = nullptr;
 };
 
 /// A server that listens for incoming connections on a port in order to
-/// create DatagramTransport objects for each one.
-class DatagramTransportServer final {
+/// create Transport objects for each one.
+class TransportServer final {
  public:
-  /// @brief  Create a new server.
-  /// @param transport_config A prototype Config copied for each created
-  ///        DatagramTransport objects.  End/addr/port will be ignored.
-  DatagramTransportServer(
-    const DatagramTransport::Config& transport_config_prototype);
 
-  ~DatagramTransportServer();
+  struct Config {
+    std::string listen_addr = "0.0.0.0";
+    uint16_t listen_port = 0;
+    size_t max_connection_queue_size = 5;
 
-  DatagramTransportServer(DatagramTransportServer&&) = default;
+    /// A prototype Config copied for each created Transport objects.
+    /// End/addr/port will be ignored.
+    Transport::Config transport_config_prototype;
+  };
+
+  TransportServer(const Config&);
+  ~TransportServer();
+  TransportServer(TransportServer&&) = default;
 
   /// @brief  (BLOCKING) Get one incoming connection, build a transport for it.
   /// @return A server-end DatagramTransport for the new connection.
@@ -185,7 +158,7 @@ class DatagramTransportServer final {
   /// in a loop on a thread; e.g.
   ///
   /// > std::thread([&](){ while(true) my_server.AwaitIncomingConnection(); });
-  DatagramTransport AwaitIncomingConnection();
+  Transport AwaitIncomingConnection();
 
   /// @brief  (BLOCKING) Retrieve the server port number.
   ///
@@ -203,7 +176,7 @@ class DatagramTransportServer final {
   void LazyInitialize();
 
   int sock_fd_ = -1;
-  const DatagramTransport::Config transport_config_prototype_;
+  const Config config_;
 };
 
-}  // namespace blocktopus
+}  // blocktopus

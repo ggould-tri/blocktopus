@@ -47,8 +47,25 @@ by mutexes.
 Blocking work functions are provided so that the caller can spawn trivial
 block-loop threads to get a traditional nonblocking API.
 
+### Interface concepts:
 
-TBD
----
-
-Additional notes will follow as the implementation progresses.
+* Datagram layer:
+  * Transport (bidirectional messaging via buffers)
+    * Constructors: From config struct, from move().  Nonblocking.
+    * Start:  Blocking (two-phase initialization)
+    * Send(TxBuffer):  Nonblocking; copies a buffer into the queue.
+    * ReceiveAll -> vector<RxBuffer>:  Nonblocking; drains reecived data.
+    * ProcessIO:  Blocking; does all available networking actions.
+  * DatagramTransportServer (A factory for Transports)
+    * Constructors:  From config struct, from move().  Nonblocking.
+    * AwaitIncomingConnection -> DatagramTransport; blocking
+    * GetPortNumber -> uint16_t; blocking (forces initialization)
+* ...
+* Deterministic endpoint:
+  * Endpoint (bookkeeping)
+    * GetSequence
+    * AdvanceSequence
+    * Subscribe (factory)
+    * Publish
+    * HandleIO
+    *
