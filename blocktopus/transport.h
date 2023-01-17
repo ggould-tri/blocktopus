@@ -85,11 +85,13 @@ class Transport final {
     /// (BLOCKING) Start the network connection for this service.
   void Start();
 
+  void Send(std::vector<uint8_t> data) { SendBuffer({data.size(), data, 0}); }
+
   /// Send a datagram on this connnection.
   ///
   /// The passed-in data is copied; actual sending is deferred until the
   /// next call to ProcessIO.
-  void Send(const TxBuffer& data);
+  void SendBuffer(const TxBuffer& data);
 
   /// Receive all queued inbound datagrams on this connnection.
   ///

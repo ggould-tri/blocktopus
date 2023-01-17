@@ -69,7 +69,7 @@ bool TryNonblockingReceive(
     int read_result = recv(
        fd, &buffer->data.data()[buffer->bytes_received],
        Transport::kHeaderSize - buffer->bytes_received,
-       O_NONBLOCK /* no flags */);
+       O_NONBLOCK);
     if (read_result == EWOULDBLOCK || read_result == EAGAIN) {
       return true;
     } else if (read_result == 0) {
@@ -85,7 +85,7 @@ bool TryNonblockingReceive(
     int read_result = recv(
        fd, &buffer->data.data()[buffer->bytes_received],
        message_length - buffer->bytes_received,
-       O_NONBLOCK /* no flags */);
+       O_NONBLOCK);
     if (read_result == EWOULDBLOCK || read_result == EAGAIN) {
       return true;
     } else if (read_result == 0) {
@@ -105,7 +105,7 @@ bool TryNonblockingSend(
     int send_result = send(
        fd, &size_data[buffer->bytes_sent],
        Transport::kHeaderSize - buffer->bytes_sent,
-       0 /* no flags */);
+       O_NONBLOCK);
     if (send_result == EWOULDBLOCK || send_result == EAGAIN) {
       return true;
     } else if (send_result == 0) {
@@ -119,7 +119,8 @@ bool TryNonblockingSend(
   while (buffer->bytes_sent < message_length) {
     int send_result = send(
        fd, &buffer->data.data()[buffer->bytes_sent],
-       message_length - buffer->bytes_sent, 0 /* no flags */);
+       message_length - buffer->bytes_sent,
+       O_NONBLOCK);
     if (send_result == EWOULDBLOCK || send_result == EAGAIN) {
       return true;
     } else if (send_result == 0) {
@@ -182,7 +183,7 @@ void Transport::Start() {
   }
 }
 
-void Transport::Send(const Transport::TxBuffer& data) {
+void Transport::SendBuffer(const Transport::TxBuffer& data) {
   outbound_buffers_.push_back(std::make_unique<Transport::TxBuffer>(data));
 }
 
@@ -208,6 +209,10 @@ bool Transport::ProcessIO() {
   }
 
   // Repeatedly send buffers without blocking.
+  if (current_outgoing_message_ == nullptr && !outbound_buffers_.empty()) {
+    current_outgoing_message_ = std::move(outbound_buffers_.front());
+    outbound_buffers_.pop_front();
+  }
   while (current_outgoing_message_ != nullptr) {
     bool closed = TryNonblockingSend(sock_fd_,
                                      current_outgoing_message_.get());
@@ -217,6 +222,8 @@ bool Transport::ProcessIO() {
       if (!outbound_buffers_.empty()) {
         current_outgoing_message_ = std::move(outbound_buffers_.front());
         outbound_buffers_.pop_front();
+      } else {
+        current_outgoing_message_ = nullptr;
       }
     }
   }
@@ -226,10 +233,11 @@ bool Transport::ProcessIO() {
     bool closed = TryNonblockingReceive(sock_fd_,
                                         current_incoming_message_.get());
     if (closed) { return false; }
-    if (current_outgoing_message_ == nullptr ||
-        current_incoming_message_->done()) {
+    if (current_incoming_message_->done()) {
       inbound_buffers_.push_back(std::move(current_incoming_message_));
       current_incoming_message_ = std::make_unique<Transport::RxBuffer>();
+    } else {
+      break;  // We couldn't recieve a full message without blocking.
     }
   }
 
