@@ -5,8 +5,6 @@
 #include <thread>
 #include <vector>
 
-namespace blocktopus {
-
 /// @file The datagram transport layer of the library, which abstracts away
 /// the boring TCP stuff.  Note that this is all written as the functions a
 /// thread would loop over, but does not spawn any actual threads -- that
@@ -33,6 +31,8 @@ namespace blocktopus {
 ///
 /// Clients are responsible for regularly servicing the queue, ideally via a
 /// thread regularly calling ProcessIO.
+
+namespace blocktopus {
 
 class Transport final {
  public:
