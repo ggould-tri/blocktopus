@@ -17,12 +17,13 @@ namespace blocktopus {
 using Seq = double;
 using ClientId = int;
 
+/// @brief A sent or received message.
 struct Message {
   std::vector<uint8_t> data;
   std::string channel;
   ClientId sender;
-  std::optional<Seq> send_seq;
-  std::optional<Seq> receive_seq;
+  Seq send_seq;
+  Seq receive_seq;
 };
 
 /// A client of a deterministic pub-sub networking system.
@@ -35,6 +36,15 @@ struct Message {
 /// We use the term "sequence number" instead of "timestamp" in order to
 /// discourage any confusion with wall-clock time.  However the most obvious
 /// sequence number would be the timestamp of a distributed simulation.
+///
+/// The invariant is this:
+/// 
+/// Within a client, considering all of its API calls in order, the
+/// following sequence numbers are nondecreaasing:
+///  * The returned sequence number of all Subscribe and Unsubscribe calls,
+///  * The message.receive_seq values of all members of Receive() returns.
+///
+/// 
 class DeterministicClient {
  public:
   DeterministicClient(std::unique_ptr<Transport> transport);
@@ -48,7 +58,10 @@ class DeterministicClient {
 
   /// @brief Subscribe to a message channel.
   ///
-  /// If @p channel is `std::nullopt` then this subscribes to all channels.
+  /// If @p channel is `std::nullopt` then this subscribes to all channels;
+  /// note that such a subscription is inefficient not only for this client
+  /// but the system as a whole since more client sequence numbers must be
+  /// processed.
   ///
   /// There is one subtlety around subscription start times, analogous to the
   /// "lagging subscription" problem of all pub/sub architectures:
