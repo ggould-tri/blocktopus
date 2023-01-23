@@ -65,12 +65,13 @@ int BoundListeningSocket(
 bool TryNonblockingReceive(
     int fd,
     Transport::RxBuffer* buffer) {
+  buffer->data.reserve(4);
   while (buffer->bytes_received < Transport::kHeaderSize) {
-    int read_result = recv(
+    const int read_result = recv(
        fd, &buffer->data.data()[buffer->bytes_received],
        Transport::kHeaderSize - buffer->bytes_received,
-       O_NONBLOCK);
-    if (read_result == EWOULDBLOCK || read_result == EAGAIN) {
+       MSG_DONTWAIT);
+    if (read_result < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
       return true;
     } else if (read_result == 0) {
       return false;  // The remote end disconnected.
@@ -80,13 +81,14 @@ bool TryNonblockingReceive(
   size_t payload_length =
     ntohl(*reinterpret_cast<uint32_t*>(buffer->data.data()));
   size_t message_length = payload_length + Transport::kHeaderSize;
+  buffer->data.reserve(message_length);
   // TODO(ggould) enforce MTU here
   while (buffer->bytes_received < message_length) {
-    int read_result = recv(
+    const int read_result = recv(
        fd, &buffer->data.data()[buffer->bytes_received],
        message_length - buffer->bytes_received,
-       O_NONBLOCK);
-    if (read_result == EWOULDBLOCK || read_result == EAGAIN) {
+       MSG_DONTWAIT);
+    if (read_result < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
       return true;
     } else if (read_result == 0) {
       return false;  // The remote end disconnected.
@@ -102,11 +104,11 @@ bool TryNonblockingSend(
   uint8_t size_data[4];
   *reinterpret_cast<uint32_t*>(&size_data) = htonl(buffer->payload_size);
   while (buffer->bytes_sent < Transport::kHeaderSize) {
-    int send_result = send(
+    const int send_result = send(
        fd, &size_data[buffer->bytes_sent],
        Transport::kHeaderSize - buffer->bytes_sent,
-       O_NONBLOCK);
-    if (send_result == EWOULDBLOCK || send_result == EAGAIN) {
+       MSG_DONTWAIT);
+    if (send_result < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
       return true;
     } else if (send_result == 0) {
       return false;  // The remote end disconnected.
@@ -117,11 +119,11 @@ bool TryNonblockingSend(
     buffer->payload_size + Transport::kHeaderSize;
   // TODO(ggould) enforce MTU here
   while (buffer->bytes_sent < message_length) {
-    int send_result = send(
+    const int send_result = send(
        fd, &buffer->data.data()[buffer->bytes_sent],
        message_length - buffer->bytes_sent,
-       O_NONBLOCK);
-    if (send_result == EWOULDBLOCK || send_result == EAGAIN) {
+       MSG_DONTWAIT);
+    if (send_result < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
       return true;
     } else if (send_result == 0) {
       return false;  // The remote end disconnected.
@@ -214,9 +216,9 @@ bool Transport::ProcessIO() {
     outbound_buffers_.pop_front();
   }
   while (current_outgoing_message_ != nullptr) {
-    bool closed = TryNonblockingSend(sock_fd_,
+    bool still_open = TryNonblockingSend(sock_fd_,
                                      current_outgoing_message_.get());
-    if (closed) { return false; }
+    if (!still_open) { return false; }
     if (current_outgoing_message_ == nullptr ||
         current_outgoing_message_->done()) {
       if (!outbound_buffers_.empty()) {
@@ -229,10 +231,13 @@ bool Transport::ProcessIO() {
   }
 
   // Repeatedly receive buffers without blocking.
+  if (current_incoming_message_ == nullptr) {
+    current_incoming_message_ = std::make_unique<Transport::RxBuffer>();
+  }
   while (current_incoming_message_ != nullptr) {
-    bool closed = TryNonblockingReceive(sock_fd_,
-                                        current_incoming_message_.get());
-    if (closed) { return false; }
+    bool still_open = TryNonblockingReceive(sock_fd_,
+                                            current_incoming_message_.get());
+    if (!still_open) { return false; }
     if (current_incoming_message_->done()) {
       inbound_buffers_.push_back(std::move(current_incoming_message_));
       current_incoming_message_ = std::make_unique<Transport::RxBuffer>();
@@ -243,7 +248,6 @@ bool Transport::ProcessIO() {
 
   // TODO(ggould) Ideally we would at this point wait on a blocking operation
   // and a condition variable on the queues.  We don't bother with this yet.
-
   return true;
 }
 

@@ -69,8 +69,8 @@ TEST(Connection, SendReceive) {
   server_transport.Send(std::vector<uint8_t>(data.begin(), data.end()));
   std::vector<std::unique_ptr<Transport::RxBuffer>> received;
   while (received.size() == 0) {
-    server_transport.ProcessIO();
-    client_transport.ProcessIO();
+    ASSERT_TRUE(server_transport.ProcessIO());
+    ASSERT_TRUE(client_transport.ProcessIO());
     received = client_transport.ReceiveAll();
   }
   EXPECT_EQ(received.size(), 1);
@@ -79,8 +79,8 @@ TEST(Connection, SendReceive) {
   client_transport.Send(std::vector<uint8_t>(data.begin(), data.end()));
   received.clear();
   while (received.size() == 0) {
-    client_transport.ProcessIO();
-    server_transport.ProcessIO();
+    ASSERT_TRUE(client_transport.ProcessIO());
+    ASSERT_TRUE(server_transport.ProcessIO());
     received = server_transport.ReceiveAll();
   }
   EXPECT_EQ(received.size(), 1);
