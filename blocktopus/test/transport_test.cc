@@ -86,4 +86,26 @@ TEST(Connection, SendReceive) {
   EXPECT_EQ(received.size(), 1);
 }
 
+TEST(Connection, SendReceiveMulti) {
+  TransportServer server(TransportServer::Config{});
+  auto server_port = server.GetPortNumber();
+  Transport client_transport(Transport::Config{
+    .remote_addr = "localhost",
+    .remote_port = server_port});
+  std::thread client_start([&](){ client_transport.Start(); });
+  Transport server_transport = server.AwaitIncomingConnection();
+  client_start.join();
+  std::string data = "foo";
+
+  // Send from server to client.
+  server_transport.Send(std::vector<uint8_t>(data.begin(), data.end()));
+  server_transport.Send(std::vector<uint8_t>(data.begin(), data.end()));
+  server_transport.Send(std::vector<uint8_t>(data.begin(), data.end()));
+  std::vector<std::unique_ptr<Transport::RxBuffer>> received;
+  ASSERT_TRUE(server_transport.ProcessIO());
+  ASSERT_TRUE(client_transport.ProcessIO());
+  received = client_transport.ReceiveAll();
+  EXPECT_EQ(received.size(), 3);
+}
+
 }  // namespace blocktopus

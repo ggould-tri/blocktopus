@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include "common.h"
 #include "transport.h"
 
 /// @file
@@ -10,21 +11,6 @@
 /// present.
 
 namespace blocktopus {
-
-/// @brief A "sequence number" over which messages are causal.  This is
-/// currently defined as `double` but any type capable of monotonicity
-/// will do.
-using Seq = double;
-using ClientId = int;
-
-/// @brief A sent or received message.
-struct Message {
-  std::vector<uint8_t> data;
-  std::string channel;
-  ClientId sender;
-  Seq send_seq;
-  Seq receive_seq;
-};
 
 /// A client of a deterministic pub-sub networking system.
 ///
@@ -38,13 +24,13 @@ struct Message {
 /// sequence number would be the timestamp of a distributed simulation.
 ///
 /// The invariant is this:
-/// 
+///
 /// Within a client, considering all of its API calls in order, the
 /// following sequence numbers are nondecreaasing:
 ///  * The returned sequence number of all Subscribe and Unsubscribe calls,
 ///  * The message.receive_seq values of all members of Receive() returns.
 ///
-/// 
+///
 class DeterministicClient {
  public:
   DeterministicClient(std::unique_ptr<Transport> transport);
@@ -80,17 +66,17 @@ class DeterministicClient {
   /// @brief Exact opposite of Subscribe, with the same sequence semantics.
   Seq Unsubscribe(std::optional<std::string> channel, Seq);
 
-  /// @brief Send a message.
+  /// @brief Publish a message.
   /// * `message.sender` will be ignored and replaced with this client's ID.
   /// * `message.receive_seq` must be greater than `message.send_seq`.
   ///
   /// This implies `ClearToAdvance(message.send_seq)` and therefore
   /// this client may no longer mention any lower sequence number.
-  void Send(Message&& message);
+  void Publish(Message&& message);
 
-  /// @brief Inform the server that this client will send no messages before
-  /// the indicated sequence number.  This client is henceforth prohibited
-  /// from mentioning any earlier sequence number.
+  /// @brief Inform the server that this client will not publish with any
+  /// sequence number lower than `clear_until`.  This client is henceforth
+  /// prohibited from mentioning any lower sequence number.
   void ClearToAdvance(Seq clear_until);
 
   /// @brief (BLOCKING) Advance the sequence number of this client.
