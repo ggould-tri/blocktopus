@@ -67,7 +67,7 @@ bool TryNonblockingReceive(
     Transport::RxBuffer* buffer) {
   buffer->data.reserve(4);
   while (buffer->bytes_received < Transport::kHeaderSize) {
-    const int read_result = recv(
+    const ssize_t read_result = recv(
        fd, &buffer->data.data()[buffer->bytes_received],
        Transport::kHeaderSize - buffer->bytes_received,
        MSG_DONTWAIT);
@@ -78,13 +78,13 @@ bool TryNonblockingReceive(
     }
     buffer->bytes_received += HandleError("recv[header]", read_result);
   }
-  size_t payload_length =
+  buffer->payload_size =
     ntohl(*reinterpret_cast<uint32_t*>(buffer->data.data()));
-  size_t message_length = payload_length + Transport::kHeaderSize;
+  size_t message_length = buffer->payload_size + Transport::kHeaderSize;
   buffer->data.reserve(message_length);
   // TODO(ggould) enforce MTU here
   while (buffer->bytes_received < message_length) {
-    const int read_result = recv(
+    const ssize_t read_result = recv(
        fd, &buffer->data.data()[buffer->bytes_received],
        message_length - buffer->bytes_received,
        MSG_DONTWAIT);
@@ -93,7 +93,7 @@ bool TryNonblockingReceive(
     } else if (read_result == 0) {
       return false;  // The remote end disconnected.
     }
-    buffer->bytes_received += HandleError("recv[header]", read_result);
+    buffer->bytes_received += HandleError("recv[payload]", read_result);
   }
   return true;
 }
@@ -104,7 +104,7 @@ bool TryNonblockingSend(
   uint8_t size_data[4];
   *reinterpret_cast<uint32_t*>(&size_data) = htonl(buffer->payload_size);
   while (buffer->bytes_sent < Transport::kHeaderSize) {
-    const int send_result = send(
+    const ssize_t send_result = send(
        fd, &size_data[buffer->bytes_sent],
        Transport::kHeaderSize - buffer->bytes_sent,
        MSG_DONTWAIT);
@@ -119,7 +119,7 @@ bool TryNonblockingSend(
     buffer->payload_size + Transport::kHeaderSize;
   // TODO(ggould) enforce MTU here
   while (buffer->bytes_sent < message_length) {
-    const int send_result = send(
+    const ssize_t send_result = send(
        fd, &buffer->data.data()[buffer->bytes_sent],
        message_length - buffer->bytes_sent,
        MSG_DONTWAIT);
