@@ -1,0 +1,8 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "data_structures",
+    hdrs = ["data_structures.h"],
+    srcs = ["data_structures.cc"],
+    deps = ["@fmt"],
+)

@@ -42,7 +42,7 @@ fidelity to capture startup and lifecycle concerns and to simulate off-nominal
 conditions like plesiochrony, component failure, and estops, must retain
 the distributed system characteristics of the real robot.  However a headline
 feature of many simulation environments is determinism, i.e., that the outcome
-of a simulation is uniquely determined by its input.  This is particularly
+of a simulation is uniquely determined by its input.  This can be particularly
 important in reinforcement learning, where an RL engine seeks to control the
 randomization of an ensemble of simulations:  Covariance-based RL methods
 assume that relevant random variables of the simulation are accessible to the
@@ -50,7 +50,7 @@ learning process.
 
 This library provides a datagram pub/sub system consisting of two primary
 parts:
- * A client library that components can use to subscribe, publish, and
+ * A client library that components can use to subscribe to, publish, and
    receive datagrams, and
  * A server binary that interleaves and orders those subscriptions,
    publications, and receptions into a unique and fully deterministic order.
@@ -93,3 +93,38 @@ To avoid this, we must break the assumptions.  This is done via:
 Both of these approaches involve declaring a particular relationship between
 sequence numbers and time, and are the reason for using simulation time as
 the sequence number.
+
+Formal Properties
+-----------------
+
+To understand the exact operation and correctness guarantees of the system,
+we introduce the idea of _sequence points_.  A sequence point is an operation
+at which a client obtains a complete and causal view of its past and may then
+carry out computation and emit messages causally subsequent to that past.
+
+The fundamental client operation is to receive a batch of messages prior to a
+given sequence number T, and to emit any number of messages with sender
+sequence number prior to T, which introduces a sequence point at T.  We also
+require that a client at this time declare an earliest arrival sequence number
+for all future messages that it will send.  This computation can usually be
+automatic, by adding a fixed minimum latency to the latest sequence number
+mentioned in the operation.
+
+With this operation in hand, the server need only assure that a client
+asking to induce a sequence point at T is blocked from doing so until no
+messages will be sent with an earlier arrival sequence.
+
+Having done this, and assuming deterministic behaviour by all clients, any
+relative timings by different clients should still yield the same sequence
+points and thus the same list of messages.
+
+Test Suite
+----------
+
+To test the operation of the algorithm, we have a set of clients with
+different message sending and receiving properties, with an overall
+pattern of sends and receives guaranteed to complete after a certain
+number of operations.  We then generate permutations of the client
+IDs and advance the clients as possible in that sequence.  If the
+algorithm is correct, every permutation should generate the same sequence.
+
